@@ -39,7 +39,7 @@ int score = 0; //分数
 int isOver = 0; //是否游戏结束
 int speed = 3; //速度，1-3
 bool isHolding = false; //是否处于按住键盘的状态
-struct tetromino nowTetromino, nextTetromino;
+struct tetromino nowTetromino, nextTetromino; //当前方块和下一次要出现的方块
 
 //函数
 void initMap();
@@ -70,7 +70,7 @@ int main(){
   return 0;
 }
 
-//初始化地图
+//初始化地图，全置为空
 void initMap(){
   int i,j;
   for(i=0; i<ROW; i++)
@@ -95,9 +95,11 @@ void initScene(){
   initMap();
   initInfo();
 
+  //初始化即将出现的方块
   genTetromino(&nowTetromino);
   flushTetromino(NULL, &nowTetromino);
 
+  //初始化下一次出现的方块
   genTetromino(&nextTetromino);
   flushInfo();
 
@@ -107,10 +109,12 @@ void initScene(){
 
 //生成一块俄罗斯方块
 void genTetromino(struct tetromino* t){
+  //为了保证随机，需要设置随机种子
   int type;
-  srand(time(0) + type);
-  type = rand()%7;
+  srand(time(0) + type); //种子是用当前时间加上一个随机内存中的数字
+  type = rand()%7; //结果范围是[0, 7)
 
+  //根据随机值来选择讲方块初始化成什么样子
   switch(type){
   case TI:
     initI(t);
@@ -148,15 +152,17 @@ struct block getBlock(struct tetromino* t, int num){
 }
 
 //刷新俄罗斯方块
+//参数before：方块移动之前的位置，为了将之抹除，为空则跳过此步
+//参数after：方块移动之后的位置
 void flushTetromino(struct tetromino* before, struct tetromino* after){
   int i;
 
   if(before != NULL){
     for(i=0; i<4; i++){
       struct block beforeBlock = getBlock(before, i);
-      if(beforeBlock.x < 0) continue;
+      if(beforeBlock.x < 0) continue; //如果此块在顶部之上，则不管他
 
-      SetPos(beforeBlock.y * 3, beforeBlock.x);
+      SetPos(beforeBlock.y * 3, beforeBlock.x); //横向每个方块占3个字符，所以绘制的时候横坐标×3
       puts("   ");
     }
   }
@@ -166,7 +172,7 @@ void flushTetromino(struct tetromino* before, struct tetromino* after){
     if(afterBlock.x < 0) continue;
 
     SetPos(afterBlock.y * 3, afterBlock.x);
-    printf("[%c]", after->sign);
+    printf("[%c]", after->sign); //按照方块定义的样子输出
   }
 }
 
@@ -176,7 +182,9 @@ void falling(){
   struct tetromino nextStep = nowTetromino;
   char ch;
 
+  //在每次下落的间隔时间里用一个循环来读取用户输入
   while(curSpeed--){
+    //增加hold标志，防止持续读取输入
     if(!_kbhit())
       isHolding = false;
     else if(!isHolding){
@@ -185,19 +193,19 @@ void falling(){
 
       switch(ch){
       case 'a':
-      case 'A':
+      case 'A': //左移
         {
           nextStep.main.y--;
           break;
         }
       case 'd':
-      case 'D':
+      case 'D': //右移
         {
           nextStep.main.y++;
           break;
         }
       case 's':
-      case 'S':
+      case 'S': //快速下落
         {
           do{
             nextStep.main.x++;
@@ -206,47 +214,52 @@ void falling(){
           nextStep.main.x--;
           break;
         }
-      case ' ':
+      case ' ': //旋转【此时就可以享受链表的便利了】
         {
           nextStep.pOffset = nextStep.pOffset->next;
           break;
         }
       }
 
+      //即时的反馈
       if(checkMove(&nextStep, false) == 0){
         flushTetromino(&nowTetromino, &nextStep);
         nowTetromino = nextStep;
       }
+      else{
+        //在失败的时候记得复位
+        nextStep = nowTetromino;
+      }
     }
 
+    //去掉多余的输入【hold的时候会bug，于是加了这个】
     while(_kbhit())
        ch = _getch();
 
     Sleep(20);
   }
 
-  //判定能否下落
-  nextStep = nowTetromino;
+  //开始下落
   nextStep.main.x++;
-  int result = checkMove(&nextStep, true);
-  if(result == 0){
+  //没问题，可以下落
+  if(checkMove(&nextStep, true) == 0){
     flushTetromino(&nowTetromino, &nextStep);
     nowTetromino = nextStep;
   }
-  else if(result == 1){
-    nextStep = nowTetromino;
-  }
-  else if(result == 2){
-    nextStep = nowTetromino;
+  //返回2，碰到了地图底部，到底了
+  else{
+    //固定到场景上去
     keepOnSence(&nowTetromino);
-    //在此判定是否可以消除
+    //判定是否可以消除
     clear();
+    //判定是否还能继续游戏
     if(checkOver()){
       isOver = 1;
       freeOffsetChain(&nowTetromino);
       freeOffsetChain(&nextTetromino);
       return;
     }
+    //能的话就做收尾工作
     freeOffsetChain(&nowTetromino);
     nowTetromino = nextTetromino;
     genTetromino(&nextTetromino);
@@ -265,11 +278,11 @@ int checkMove(struct tetromino* nextStep, bool isFall){
 
   for(i=0; i<4; i++){
     b=getBlock(nextStep, i);
-    if(b.x < 0) continue;
-    if(b.x >= ROW) return 2;
-    if(b.y < 0 || b.y >= COL) return 1;
+    if(b.x < 0) continue; //顶部以上略过
+    if(b.x >= ROW) return 2; //超过地图底部边界【仅下落】
+    if(b.y < 0 || b.y >= COL) return 1; //超过左右边界
     if(map[b.x][b.y] != NONE){
-      return (isFall ? 2 : 1);
+      return (isFall ? 2 : 1); //此位置上有之前落下的方块了
     }
   }
   return 0;
@@ -341,6 +354,8 @@ bool checkOver(){
   return false;
 }
 
+//刷新右边靠上的那些提示信息
+//先全部用空格抹除，再输出
 void flushInfo(){
   int i;
   for(i=3; i<11; i++){
@@ -352,11 +367,13 @@ void flushInfo(){
   showScoreInfo();
 }
 
+//输出分数信息
 void showScoreInfo(){
   SetPos(35, 10);
   printf("Now score: %d", score);
 }
 
+//输出下一步出现的方块信息
 void showNextInfo(struct tetromino* after){
   SetPos(35, 3);
   printf("Next will be :");
@@ -364,6 +381,6 @@ void showNextInfo(struct tetromino* after){
   struct block b1,b2 = {8, 13};
   b1 = after->main;
   after->main = b2;
-  flushTetromino(NULL, after);
+  flushTetromino(NULL, after); //没错，还是用的这个函数
   after->main = b1;
 }

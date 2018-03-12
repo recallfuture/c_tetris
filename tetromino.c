@@ -23,7 +23,7 @@ struct offset{
 //记得释放链表
 struct tetromino{
   struct block main;
-  struct offset* pOffset;
+  struct offset* pOffset; //指向一个offset链表
   char sign;
 };
 
